@@ -69,7 +69,8 @@
     <CudaCompile>
       <CodeGeneration>compute_50,sm_50;compute_52,sm_52;compute_60,sm_60;</CodeGeneration>
       <AdditionalOptions>-Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
-      <Include>./;D:\Programmes\CudaSamples\common\inc</Include>
+      <Include>
+      </Include>
       <Defines>WIN32</Defines>
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</GPUDebugInfo>
       <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</GenerateLineInfo>
@@ -79,14 +80,14 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
     </Link>
     <CudaCompile>
-      <Runtime>MTd</Runtime>
+      <Runtime>InheritFromHost</Runtime>
       <TargetMachinePlatform>64</TargetMachinePlatform>
     </CudaCompile>
   </ItemDefinitionGroup>
@@ -96,33 +97,61 @@
     </Link>
     <CudaLink>
       <AdditionalLibraryDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.</AdditionalLibraryDirectories>
+      <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GPUDebugInfo>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Od</Optimization>
     </CudaLink>
     <CudaCompile>
       <NvccCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">compile</NvccCompilation>
+      <MaxRegCount Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">0</MaxRegCount>
+      <HostDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</HostDebugInfo>
+      <FastMath Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</FastMath>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Od</Optimization>
+      <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GPUDebugInfo>
+      <RuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">RTC1</RuntimeChecks>
+      <TypeInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</TypeInfo>
+      <Warning Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">InheritFromHost</Warning>
+      <PtxAsOptionV Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</PtxAsOptionV>
+      <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateLineInfo>
     </CudaCompile>
     <CudaCompile>
-      <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GPUDebugInfo>
+      <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</GPUDebugInfo>
     </CudaCompile>
     <CudaCompile>
-      <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateLineInfo>
+      <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</GenerateLineInfo>
     </CudaCompile>
     <CudaCompile>
-      <PtxAsOptionV Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</PtxAsOptionV>
-      <HostDebugInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</HostDebugInfo>
-      <Warning Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Wall</Warning>
+      <PtxAsOptionV Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</PtxAsOptionV>
+      <HostDebugInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</HostDebugInfo>
+      <Warning Condition="'$(Configuration)|$(Platform)'=='Release|x64'">W0</Warning>
       <TargetMachinePlatform Condition="'$(Configuration)|$(Platform)'=='Release|x64'">64</TargetMachinePlatform>
+      <MaxRegCount Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      </MaxRegCount>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">O2</Optimization>
+      <FastMath Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</FastMath>
+      <Runtime Condition="'$(Configuration)|$(Platform)'=='Release|x64'">InheritFromHost</Runtime>
+      <RuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Default</RuntimeChecks>
+      <TypeInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</TypeInfo>
     </CudaCompile>
     <CudaLink>
-      <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GPUDebugInfo>
+      <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</GPUDebugInfo>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Od</Optimization>
     </CudaLink>
+    <ClCompile>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalOptions)</AdditionalOptions>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile>
+      <FavorSizeOrSpeed Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Speed</FavorSizeOrSpeed>
+    </ClCompile>
+    <ClCompile>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</WholeProgramOptimization>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <CudaCompile Include="HostComputation.cu" />
-    <ClInclude Include="Complex.h" />
     <ClInclude Include="CudaIntegration.h" />
     <ClInclude Include="HostComputation.h" />
     <ClCompile Include="Fractals_Cuda.cpp" />
-    <ClInclude Include="ComplexSequence.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

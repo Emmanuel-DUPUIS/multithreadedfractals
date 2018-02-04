@@ -9,6 +9,7 @@
 #include <GL/wglew.h>
 #include <GL/freeglut.h>
 
+void saveAsBmp(const char* iFileName, uint32_t iWidth, uint32_t iHeight, void* iRawData);
 
 // CUDA runtime
 // CUDA utilities and system includes
@@ -18,11 +19,14 @@
 //#include <helper_functions.h>
 #include <helper_cuda.h>
 #include <helper_cuda_gl.h>
+#include <helper_timer.h>
+
+StopWatchInterface *hTimer = NULL;
 
 #include "HostComputation.h"
 
 #define FRAME_PERIOD   10   // milliseconds
-#define NB_ZOOM_STEPS  200
+#define NB_ZOOM_STEPS  500
 
 #define MODE_JULIA       0
 #define MODE_MANDELBROT  1
@@ -129,7 +133,7 @@ public:
   Viewer() :mJuliaParam(0, 0),
     _Pointer{0,0},
     _JuliaView(800, 600, 4.0 / 800, PlanePoint{ .0,.0 }),
-    _MandelbrotView(1600, 1200, .50 / 800, PlanePoint{ -1.,.0 }) 
+    _MandelbrotView(800, 600, 0.00405063294, PlanePoint{ -0.5,.0 }) //_MandelbrotView(1200, 800, 1.0 / 800, PlanePoint{ -1.5,.0 }) 
   {
     _Options = { { "textInfo", true} };
 
@@ -202,41 +206,42 @@ void initOpenGLBuffers()
 		theViewer->mJuliaSetPixelBuffer = 0;
 	}
 
-// allocate new buffers
-uint16_t width, height;
-theViewer->getScreenDimensions(width, height);
+  // allocate new buffers
+  uint16_t width, height;
+  theViewer->getScreenDimensions(width, height);
 
-theViewer->mJuliaGLSetData = (uchar4 *)malloc(4 * width * height);
+  theViewer->mJuliaGLSetData = (uchar4 *)malloc(4 * width * height);
 
-printf("Creating GL texture...\n");
-glEnable(GL_TEXTURE_2D);
-glGenTextures(1, &theViewer->mJuliaSetTexture);
-glBindTexture(GL_TEXTURE_2D, theViewer->mJuliaSetTexture);
-glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, theViewer->mJuliaGLSetData);
-glDisable(GL_TEXTURE_2D);
-printf("Texture created.\n");
+  printf("Creating GL texture...\n");
+  glEnable(GL_TEXTURE_2D);
+  glGenTextures(1, &theViewer->mJuliaSetTexture);
+  glBindTexture(GL_TEXTURE_2D, theViewer->mJuliaSetTexture);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, theViewer->mJuliaGLSetData);
+  glDisable(GL_TEXTURE_2D);
+  printf("Texture created.\n");
 
-printf("Creating PBO...\n");
-glGenBuffers(1, &theViewer->mJuliaSetPixelBuffer);
-glBindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, theViewer->mJuliaSetPixelBuffer);
-glBufferData(GL_PIXEL_UNPACK_BUFFER_ARB, 4 * width * height, theViewer->mJuliaGLSetData, GL_STREAM_COPY);
-//While a PBO is registered to CUDA, it can't be used
-//as the destination for OpenGL drawing calls.
-//But in our particular case OpenGL is only used
-//to display the content of the PBO, specified by CUDA kernels,
-//so we need to register/unregister it only once.
+  printf("Creating PBO...\n");
+  glGenBuffers(1, &theViewer->mJuliaSetPixelBuffer);
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, theViewer->mJuliaSetPixelBuffer);
+  glBufferData(GL_PIXEL_UNPACK_BUFFER_ARB, 4 * width * height, theViewer->mJuliaGLSetData, GL_STREAM_COPY);
+  
+  //While a PBO is registered to CUDA, it can't be used
+  //as the destination for OpenGL drawing calls.
+  //But in our particular case OpenGL is only used
+  //to display the content of the PBO, specified by CUDA kernels,
+  //so we need to register/unregister it only once.
 
-// DEPRECATED: checkCudaErrors( cudaGLRegisterBufferObject(theViewer->mJuliaSetPixelBuffer) );
-checkCudaErrors(cudaGraphicsGLRegisterBuffer(&theViewer->mJCudaJuliaSetResource, theViewer->mJuliaSetPixelBuffer,
-  cudaGraphicsMapFlagsWriteDiscard));
-printf("PBO created.\n");
+  // DEPRECATED: checkCudaErrors( cudaGLRegisterBufferObject(theViewer->mJuliaSetPixelBuffer) );
+  checkCudaErrors(cudaGraphicsGLRegisterBuffer(&theViewer->mJCudaJuliaSetResource, theViewer->mJuliaSetPixelBuffer,
+    cudaGraphicsMapFlagsWriteDiscard));
+  printf("PBO created.\n");
 }
 
-void convergency(uint32_t* image, uint16_t iImageWidth, uint16_t iImageHeight, uint16_t iWPixel, uint16_t iHPixel, double iXCenter, double iYCenter, double iPixelWidth, uint16_t nbIterations, double* dd = nullptr, uint16_t* iter = nullptr)
+void convergency(uint16_t iImageWidth, uint16_t iImageHeight, uint16_t iWPixel, uint16_t iHPixel, double iXCenter, double iYCenter, double iPixelWidth, uint16_t nbIterations, double* dd = nullptr, uint16_t* iter = nullptr)
 {
   double cx = iXCenter + (iWPixel - .5 * iImageWidth) * iPixelWidth;
   double cy = iYCenter + (-iHPixel + .5 * iImageHeight) * iPixelWidth;
@@ -257,103 +262,18 @@ void convergency(uint32_t* image, uint16_t iImageWidth, uint16_t iImageHeight, u
 
     if (radius2 > 4.)
     {
-      //gNbDiv++;
       double dist = 1.4426954 * log(log(radius2) / 1.38629436111);
       if (dd)
         *dd = dist;
-      if (image)
-      {
-        double f = ((n + 1) % 12 - dist) / 12.0;
-        if (f < 0)
-          f = .0;
-        uint32_t color = (unsigned char)(10.0 * f);
-        color |= ((unsigned char)(20.0 * f)) << 8;
-        color |= ((unsigned char)(255.0 * f)) << 16;
-        color |= 255 << 24;
-        image[iHPixel*iImageWidth + iWPixel] = color;
-      }
+  
       if (iter)
         *iter = n;
       return;
     }
   }
 
-  //gNbConv++;
-  if (image)
-  {
-    uint32_t color = 100;
-    color |= 50 << 8;
-    color |= 255 << 16;
-    color |= 255 << 24;
-    image[iHPixel*iImageWidth + iWPixel] = color;
-  }
-
   if (iter)
     *iter = 0;
-}
-
-void ComputeThread(uint16_t affinity, uint32_t* image, uint16_t width, uint16_t height, uint32_t start, uint32_t end, double pixelSize, double cx, double cy, uint16_t nbIterations)
-{
-  using namespace std::chrono_literals;
-
-  PROCESSOR_NUMBER pn;
-  GetCurrentProcessorNumberEx(&pn);
-  while (pn.Number != affinity)
-  {
-    std::this_thread::sleep_for(10us);
-    GetCurrentProcessorNumberEx(&pn);
-  }
-   
-  /*std::stringstream msg;
-  msg << "Execute thread on " << (int)pn.Number << " :" << start << " - " << end << std::endl;
-  std::cout << msg.str();*/
-  
-  uint16_t w = start % width;
-  uint16_t h = start / width;
-  uint32_t nb = end - start;
-  for (uint_fast32_t i = 0; i < nb; i++)
-  {
-    convergency(image, width, height, w, h, cx, cy, pixelSize, nbIterations);
-    w++;
-    if (w == width)
-    {
-      w = 0;
-      h++;
-    }
-  }
-}
-
-void ComputeOnCpu(uint32_t* image, uint16_t width, uint16_t height, double pixelSize, double cx, double cy, uint16_t nbIterations, float& elpasedTime)
-{
-  std::string mode = "multiFix"; // single multiFix
-
-  if (mode == "single")
-  {
-    for (uint_fast16_t i = 0; i < width; i++)
-      for (uint_fast16_t j = 0; j < height; j++)
-        convergency(image, width, height, i, j, cx, cy, pixelSize, nbIterations);
-  }
-  else if (mode == "multiFix")
-  {
-    uint32_t totalSize = width*height;
-    uint32_t packetSize = (uint32_t)(totalSize / 8.);
-    for (uint16_t t = 0; t < std::thread::hardware_concurrency(); t++)
-    {
-      std::thread* p = nullptr;
-      if (t != std::thread::hardware_concurrency() - 1)
-        p = new std::thread(ComputeThread, t, image, width, height, t*packetSize, (t + 1)*packetSize, pixelSize, cx, cy, nbIterations);
-      else
-        p = new std::thread(ComputeThread, t, image, width, height, t*packetSize, totalSize, pixelSize, cx, cy, nbIterations);
-      auto handle = p->native_handle();
-      SetThreadAffinityMask(handle, (DWORD_PTR)1 << t);
-      p->join();
-    }
-  }
-
-  elpasedTime = 0;
-
-  //std::cout << "div=" << gNbDiv << "   conv=" << gNbConv << std::endl;
-  //memset(image, 0xff, w*h * 4);
 }
 
 // render image using CUDA or CPU
@@ -364,12 +284,12 @@ void renderImage(bool cpu)
 		theViewer->mZoom++;
 		double ratio;
 		ratio = (double)theViewer->mZoom * (double)theViewer->mZoom / (NB_ZOOM_STEPS*NB_ZOOM_STEPS);
-		/*
-		if (theViewer->mMode == 0)
+		
+		/*if (theViewer->mMode == 0)
 		{
-			theViewer->mPixelXYWidth[0]  = ratio * 4.0 / width + (1 - ratio)*theViewer->mZoomPixelXYWidth;
-			theViewer->mWindowCenterX[0] = (1 - ratio)*theViewer->mZoomWindowCenterX;
-			theViewer->mWindowCenterY[0] = (1 - ratio)*theViewer->mZoomWindowCenterY;
+			theViewer->_PixelXYWidth[0]  = ratio * 4.0 / width + (1 - ratio)*theViewer->mZoomPixelXYWidth;
+			theViewer->_WindowCenterX[0] = (1 - ratio)*theViewer->mZoomWindowCenterX;
+			theViewer->_WindowCenterY[0] = (1 - ratio)*theViewer->mZoomWindowCenterY;
 		}
 		else
 		{
@@ -379,40 +299,41 @@ void renderImage(bool cpu)
 		}*/
 	}
 	
-  theViewer->getActiveView().SetNbIterations((uint16_t)(70. + 50.*log(.1 / theViewer->getActiveView().PlaneSizePixel())));
-	// GPU 
-	if (1)
-  {
-    checkCudaErrors(cudaGraphicsMapResources(1, &theViewer->mJCudaJuliaSetResource, 0));
-		size_t num_bytes;
-		checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void **)&theViewer->mJuliaCudaSetData, &num_bytes, theViewer->mJCudaJuliaSetResource));
+  //theViewer->getActiveView().SetNbIterations((uint16_t)(70. + 50.*log(.1 / theViewer->getActiveView().PlaneSizePixel())));
+  theViewer->getActiveView().SetNbIterations(200);
 
-    //if (theViewer->mMode == 0)
-      //JuliaCuda(theViewer->mJuliaCudaSetData, theViewer->_JuliaView.Width(), theViewer->_JuliaView.Height(),
-      //          theViewer->_JuliaView.PlaneSizePixel(), theViewer->_JuliaView.Center()._x, theViewer->_JuliaView.Center()._y, theViewer->mJuliaParam, ((int)(step / 100) % 2)*(100 - step % 100) + ((int)(step / 100 + 1) % 2)*(step % 100));
-		//else
+
+  sdkResetTimer(&hTimer);
+
+  checkCudaErrors(cudaGraphicsMapResources(1, &theViewer->mJCudaJuliaSetResource, 0));
+	size_t num_bytes;
+	checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void **)&theViewer->mJuliaCudaSetData, &num_bytes, theViewer->mJCudaJuliaSetResource));
+
+  /*if (theViewer->mMode == 0)
+      JuliaCuda(theViewer->mJuliaCudaSetData, theViewer->_JuliaView.Width(), theViewer->_JuliaView.Height(),
+                theViewer->_JuliaView.PlaneSizePixel(), theViewer->_JuliaView.Center()._x, theViewer->_JuliaView.Center()._y, theViewer->mJuliaParam, ((int)(step / 100) % 2)*(100 - step % 100) + ((int)(step / 100 + 1) % 2)*(step % 100));
+	else*/
     	cuComputeAndFillImageForGrid(theViewer->mJuliaCudaSetData, theViewer->_MandelbrotView.Width(), theViewer->_MandelbrotView.Height(),
-                     theViewer->_MandelbrotView.PlaneSizePixel(),
-        theViewer->_MandelbrotView.Center()._x, theViewer->_MandelbrotView.Center()._y, theViewer->getActiveView().GetNbIterations(), theViewer->_ElapsedTime);
-    //, ((int)(step / 100) % 2)*(100 - step % 100) + ((int)(step / 100 + 1) % 2)*(step % 100));
+                                   (float)theViewer->_MandelbrotView.PlaneSizePixel(),
+                                   (float)theViewer->_MandelbrotView.Center()._x, (float)theViewer->_MandelbrotView.Center()._y, theViewer->getActiveView().GetNbIterations(), theViewer->_ElapsedTime);
     
 		checkCudaErrors(cudaGraphicsUnmapResources(1, &theViewer->mJCudaJuliaSetResource, 0));
-	}
-  else
-  {
-    ComputeOnCpu((uint32_t*)theViewer->mJuliaGLSetData, theViewer->_MandelbrotView.Width(), theViewer->_MandelbrotView.Height(),
-      theViewer->_MandelbrotView.PlaneSizePixel(),
-      theViewer->_MandelbrotView.Center()._x, theViewer->_MandelbrotView.Center()._y, theViewer->getActiveView().GetNbIterations(), theViewer->_ElapsedTime);
-    glBufferData(GL_PIXEL_UNPACK_BUFFER_ARB, 4 * theViewer->_MandelbrotView.Width()*theViewer->_MandelbrotView.Height(), theViewer->mJuliaGLSetData, GL_STREAM_COPY);
-  }
-}
+
+    //printf("GPU = %5.8f\n", sdkGetTimerValue(&hTimer));
+
+    if (false) //true)
+    {
+      glGetBufferSubData(GL_PIXEL_UNPACK_BUFFER_ARB, 0, 4*(uint32_t)theViewer->_MandelbrotView.Width()*(uint32_t)theViewer->_MandelbrotView.Height(), theViewer->mJuliaGLSetData);
+      saveAsBmp("Mandelbrot_Cuda.bmp", (uint32_t)theViewer->_MandelbrotView.Width(), (uint32_t)theViewer->_MandelbrotView.Height(), theViewer->mJuliaGLSetData);
+    }
+ }
 
 
 void displayFunc()
 {
   static int frame  = 0;
-  if (frame > 0)
-    exit(1);
+  /*if (frame > 0)
+    exit(1);*/
   frame++;
 
 	glClear(GL_COLOR_BUFFER_BIT);
@@ -550,9 +471,19 @@ void displayFunc()
       theViewer->_MandelbrotView.PlaneSizePixel(), theViewer->_MandelbrotView.Center()._x, theViewer->_MandelbrotView.Center()._y, 
       theViewer->getActiveView().GetNbIterations(), dist, ax, ay);
 
+    static uint32_t counter = 0;
+    static float timer = 0;
+    timer += theViewer->_ElapsedTime;
+    counter++;
+    if (counter > 10000)
+    {
+      printf("CudaT=%6.3lfms", timer / counter);
+      exit(-4);
+    }
+
     glColor3f(1.0f, 1.0f, 1.0f);
     glRasterPos2f(.05f, .12f);
-    sprintf_s(str, "T=%4dms CudaT=%5.1lf Iter=%4d P=[%4d,%4d] W=[%4d,%4d] C=[%5lf,%5lf] Z=[%5lf,%5lf]", dTime, theViewer->_ElapsedTime, theViewer->getActiveView().GetNbIterations(), theViewer->_Pointer._w, theViewer->_Pointer._h, width, height, theViewer->mJuliaParam.real(),
+    sprintf_s(str, "T=%4dms CudaT=%6.3lfms Iter=%4d P=[%4d,%4d] W=[%4d,%4d] C=[%5lf,%5lf] Z=[%5lf,%5lf]", dTime, theViewer->_ElapsedTime, theViewer->getActiveView().GetNbIterations(), theViewer->_Pointer._w, theViewer->_Pointer._h, width, height, theViewer->mJuliaParam.real(),
       theViewer->mJuliaParam.imaginary(), planePos._x, planePos._y);
     int len = (int)strlen(str);
     for (int i = 0; i < len; i++) {
@@ -768,7 +699,71 @@ int main(int argc, char **argv)
 
 	glutCloseFunc(cleanup);
 
+  sdkCreateTimer(&hTimer);
+  sdkStartTimer(&hTimer);
+
 	glutMainLoop();
 
 	delete theViewer;
+}
+
+void saveAsBmp(const char* iFileName, uint32_t iWidth, uint32_t iHeight, void* iRawData)
+{
+  FILE* fpW = nullptr;
+  if (!fopen_s(&fpW, iFileName, "wb"))
+  {
+    uint32_t size1 = 14 + 124 + 4 * iWidth*iHeight, offset = 14 + 124, size2 = 124;
+
+    // BMP header
+    fwrite((void*)"BM", 1, 2, fpW);
+    fwrite((unsigned char*)&size1, 4, 1, fpW);
+    fwrite((void*)"\0\0\0\0", 1, 4, fpW);
+    fwrite((void*)&offset, sizeof(offset), 1, fpW);
+
+    fwrite((void*)&size2, sizeof(size2), 1, fpW);
+    fwrite((void*)&iWidth, sizeof(iWidth), 1, fpW);
+    fwrite((void*)&iHeight, sizeof(iHeight), 1, fpW);
+    // Color plane
+    uint16_t t16 = 1;
+    fwrite((void*)&t16, sizeof(t16), 1, fpW);
+    // Number of bits per pixel
+    t16 = 32;
+    fwrite((void*)&t16, sizeof(t16), 1, fpW);
+    // Compression mode BI_BITFIELDS
+    uint32_t t32 = 3;
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    // Size of raw data
+    t32 = 4 * iWidth*iHeight;
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    // Print resolution
+    t32 = 2835;
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    // Palette
+    t32 = 0;
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    // Masks
+    t32 = 0x000000FF;
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    t32 = 0x0000FF00;
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    t32 = 0x00FF0000;
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    t32 = 0xFF000000;
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    t32 = 0x73524742;
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    t32 = 0;
+    for (uint16_t n = 0; n<48 / 4; n++)
+      fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    t32 = 0X02;
+    fwrite((void*)&t32, sizeof(t32), 1, fpW);
+    t32 = 0;
+    for (uint16_t n = 0; n<12 / 4; n++)
+      fwrite((void*)&t32, sizeof(t32), 1, fpW);
+
+    fwrite((void*)iRawData, sizeof(uint32_t), iWidth*iHeight, fpW);
+    fclose(fpW);
+  }
 }

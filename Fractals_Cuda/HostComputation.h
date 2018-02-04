@@ -4,7 +4,7 @@
 #include <vector_types.h>
 #include "Complex.h"
 
-extern "C" void cuComputeAndFillImageForGrid(uchar4 *dst, uint16_t imageW, uint16_t imageH, double pixelXYWidth, double windowCenterX, double windowCenterY, uint16_t nbIterations, float& oElapsedTime);
+extern "C" void cuComputeAndFillImageForGrid(uchar4 *dst, uint16_t imageW, uint16_t imageH, float pixelXYWidth, float windowCenterX, float windowCenterY, uint16_t nbIterations, float& oElapsedTime);
 
 __CudaCallable__ uint16_t MandelbrotGPU(uint16_t w, uint16_t h, uint16_t imageW, uint16_t imageH, double pixelXYWidth, double windowCenterX, double windowCenterY, uint16_t nbIterations, double& dist, double& ax, double& ay)
 {
